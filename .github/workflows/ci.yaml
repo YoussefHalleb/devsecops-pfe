@@ -78,6 +78,13 @@ jobs:
 
       - name: Debug - Check ZAP Report
         run: ls -l zap.xml zap.html
+        
+      - name: Upload ZAP HTML Report
+        uses: actions/upload-artifact@v4
+        with:
+         name: zap-report
+         path: zap.html
+
 
       - name: Upload ZAP Report to DefectDojo
         run: |
