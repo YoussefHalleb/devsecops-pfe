@@ -1,1 +1,83 @@
+name: DevSecOps Pipeline - OWASP Juice Shop
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+
+env:
+  JUICE_SHOP_IMAGE: bkimminich/juice-shop
+  JUICE_SHOP_PORT: 3000
+
+jobs:
+
+# =====================================================
+# SCA - TRIVY (IMAGE VULNERABILITY SCAN)
+# =====================================================
+  trivy:
+    name: SCA - Trivy (Juice Shop)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Scan Juice Shop Docker Image
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          image-ref: ${{ env.JUICE_SHOP_IMAGE }}
+          format: json
+          output: trivy.json
+        continue-on-error: true
+
+      - name: Upload Trivy Report to DefectDojo
+        run: |
+          curl -X POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
+            -H "Authorization: Token $DEFECTDOJO_TOKEN" \
+            -F "scan_type=Trivy Scan" \
+            -F "product_name=$DD_PRODUCT" \
+            -F "engagement_name=$DD_ENGAGEMENT" \
+            -F "file=@trivy.json"
+        env:
+          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+          DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
+          DD_PRODUCT: ${{ secrets.DD_PRODUCT }}
+          DD_ENGAGEMENT: ${{ secrets.DD_ENGAGEMENT }}
+
+# =====================================================
+# DAST - OWASP ZAP
+# =====================================================
+  zap:
+    name: DAST - OWASP ZAP (Juice Shop)
+    runs-on: ubuntu-latest
+    needs: trivy
+
+    steps:
+      - name: Run OWASP Juice Shop Container
+        run: |
+          docker run -d --name juice-shop -p 3000:3000 ${{ env.JUICE_SHOP_IMAGE }}
+
+      - name: Wait for Juice Shop to be Ready
+        run: sleep 40
+
+      - name: Run OWASP ZAP Baseline Scan
+        run: |
+          docker run --rm \
+            -v $(pwd):/zap/wrk \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+            -t http://host.docker.internal:3000 \
+            -x zap.xml \
+            -r zap.html || true
+
+      - name: Upload ZAP Report to DefectDojo
+        run: |
+          curl -X POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
+            -H "Authorization: Token $DEFECTDOJO_TOKEN" \
+            -F "scan_type=ZAP Scan" \
+            -F "product_name=$DD_PRODUCT" \
+            -F "engagement_name=$DD_ENGAGEMENT" \
+            -F "file=@zap.xml"
+        env:
+          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+          DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
+          DD_PRODUCT: ${{ secrets.DD_PRODUCT }}
+          DD_ENGAGEMENT: ${{ secrets.DD_ENGAGEMENT }}
 
