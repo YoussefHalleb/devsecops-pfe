@@ -1,4 +1,4 @@
-name: DevSecOps Pipeline - OWASP Juice Shop
+name: DevSecOps Pipeline - OWASP Juice Shop (Full Scan)
 
 on:
   push:
@@ -12,7 +12,7 @@ env:
 jobs:
 
 # =====================================================
-# SCA - TRIVY (IMAGE SCAN) ✅ (DÉJÀ OK)
+# SCA - TRIVY (IMAGE VULNERABILITY SCAN)
 # =====================================================
   trivy:
     name: SCA - Trivy (Juice Shop)
@@ -42,10 +42,10 @@ jobs:
           DD_ENGAGEMENT: ${{ secrets.DD_ENGAGEMENT }}
 
 # =====================================================
-# DAST - OWASP ZAP (CORRIGÉ POUR GITHUB ACTIONS)
+# DAST - OWASP ZAP (FULL SCAN - ACTIVE)
 # =====================================================
   zap:
-    name: DAST - OWASP ZAP (Juice Shop)
+    name: DAST - OWASP ZAP FULL SCAN (Juice Shop)
     runs-on: ubuntu-latest
     needs: trivy
 
@@ -64,27 +64,21 @@ jobs:
       - name: Wait for Juice Shop
         run: sleep 40
 
-      - name: Run OWASP ZAP Baseline Scan
+      - name: Run OWASP ZAP FULL Scan
         run: |
           docker run --rm \
             --user root \
             --network zap-net \
-            -v $(pwd):/zap/wrk:rw \
+            -v $(pwd):/zap/wrk \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py \
+            zap-full-scan.py \
             -t http://juice-shop:3000 \
             -x zap.xml \
             -r zap.html || true
 
-      - name: Debug - Check ZAP Report
-        run: ls -l zap.xml zap.html
-        
-      - name: Upload ZAP HTML Report
-        uses: actions/upload-artifact@v4
-        with:
-         name: zap-report
-         path: zap.html
-
+      - name: Check ZAP reports
+        run: |
+          ls -l zap.xml zap.html
 
       - name: Upload ZAP Report to DefectDojo
         run: |
@@ -99,3 +93,9 @@ jobs:
           DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
           DD_PRODUCT: ${{ secrets.DD_PRODUCT }}
           DD_ENGAGEMENT: ${{ secrets.DD_ENGAGEMENT }}
+
+      - name: Upload ZAP HTML Report (Artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-html-report
+          path: zap.html
