@@ -8,11 +8,11 @@ on:
 env:
   JUICE_SHOP_IMAGE: bkimminich/juice-shop
   JUICE_SHOP_PORT: 3000
- 
+
 jobs:
 
 # =====================================================
-# SCA - TRIVY (IMAGE VULNERABILITY SCAN)
+# SCA - TRIVY (IMAGE SCAN) ✅ (DÉJÀ OK)
 # =====================================================
   trivy:
     name: SCA - Trivy (Juice Shop)
@@ -42,7 +42,7 @@ jobs:
           DD_ENGAGEMENT: ${{ secrets.DD_ENGAGEMENT }}
 
 # =====================================================
-# DAST - OWASP ZAP
+# DAST - OWASP ZAP (CORRIGÉ POUR GITHUB ACTIONS)
 # =====================================================
   zap:
     name: DAST - OWASP ZAP (Juice Shop)
@@ -50,22 +50,33 @@ jobs:
     needs: trivy
 
     steps:
-      - name: Run OWASP Juice Shop Container
-        run: |
-          docker run -d --name juice-shop -p 3000:3000 ${{ env.JUICE_SHOP_IMAGE }}
+      - name: Create Docker Network
+        run: docker network create zap-net
 
-      - name: Wait for Juice Shop to be Ready
+      - name: Run OWASP Juice Shop
+        run: |
+          docker run -d \
+            --name juice-shop \
+            --network zap-net \
+            -p 3000:3000 \
+            ${{ env.JUICE_SHOP_IMAGE }}
+
+      - name: Wait for Juice Shop
         run: sleep 40
 
       - name: Run OWASP ZAP Baseline Scan
         run: |
           docker run --rm \
-            -v $(pwd):/zap/wrk \
+            --network zap-net \
+            -v $(pwd):/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
-            -t http://host.docker.internal:3000 \
+            -t http://juice-shop:3000 \
             -x zap.xml \
             -r zap.html || true
+
+      - name: Debug - Check ZAP Report
+        run: ls -l zap.xml
 
       - name: Upload ZAP Report to DefectDojo
         run: |
@@ -80,4 +91,3 @@ jobs:
           DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
           DD_PRODUCT: ${{ secrets.DD_PRODUCT }}
           DD_ENGAGEMENT: ${{ secrets.DD_ENGAGEMENT }}
-
