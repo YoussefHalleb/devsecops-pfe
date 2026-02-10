@@ -1,4 +1,4 @@
-name: Security Pipeline (SCA + DAST Authenticated)
+name: Security Pipeline - OWASP ZAP Authenticated
 
 on:
   push:
@@ -8,14 +8,13 @@ on:
 env:
   JUICE_SHOP_IMAGE: bkimminich/juice-shop
   JUICE_SHOP_PORT: 3000
+
+  # ⚠️ Pour un vrai projet, mets-les dans GitHub Secrets
   ZAP_USER_EMAIL: youssefhalleb52@gmail.com
   ZAP_USER_PASSWORD: halleb123
 
 jobs:
 
-# =====================================================
-# DAST - OWASP ZAP (AUTHENTICATED ACTIVE SCAN)
-# =====================================================
   zap:
     name: DAST - OWASP ZAP Authenticated Scan
     runs-on: ubuntu-latest
@@ -24,7 +23,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Create Docker Network
+      - name: Create Docker network
         run: docker network create zap-net
 
       - name: Run OWASP Juice Shop
@@ -35,21 +34,25 @@ jobs:
             -p 3000:3000 \
             ${{ env.JUICE_SHOP_IMAGE }}
 
-      - name: Wait for Juice Shop
+      - name: Wait for Juice Shop to start
         run: sleep 40
 
-      # 🔑 Create user automatically
+      # =====================================================
+      # Create user automatically (NO manual login)
+      # =====================================================
       - name: Create Juice Shop User
         run: |
-          curl -X POST http://localhost:3000/api/Users \
+          curl -s -X POST http://localhost:3000/api/Users \
             -H "Content-Type: application/json" \
             -d "{
               \"email\": \"${{ env.ZAP_USER_EMAIL }}\",
               \"password\": \"${{ env.ZAP_USER_PASSWORD }}\"
-            }"
+            }" || true
 
-      # 🧪 OWASP ZAP authenticated scan
-      - name: Run OWASP ZAP FULL Scan (Authenticated)
+      # =====================================================
+      # OWASP ZAP AUTHENTICATED ACTIVE SCAN
+      # =====================================================
+      - name: Run OWASP ZAP Full Scan (Authenticated)
         run: |
           docker run --rm \
             --user root \
@@ -58,19 +61,26 @@ jobs:
             ghcr.io/zaproxy/zaproxy:stable \
             zap-full-scan.py \
             -t http://juice-shop:3000 \
-            -n zap-context.context \
-            -U zap-user \
             -a \
             -x zap.xml \
-            -r zap.html || true
+            -r zap.html \
+            -z "
+              -config auth.method=form
+              -config auth.loginurl=http://juice-shop:3000/rest/user/login
+              -config auth.loginbody=email=${{ env.ZAP_USER_EMAIL }}&password=${{ env.ZAP_USER_PASSWORD }}
+              -config auth.loggedinindicator=Logout
+            " || true
 
+      # =====================================================
+      # Upload reports
+      # =====================================================
       - name: Upload ZAP HTML Report
         uses: actions/upload-artifact@v4
         with:
           name: zap-html-report
           path: zap.html
 
-      - name: Upload ZAP XML to DefectDojo
+      - name: Upload ZAP XML Report to DefectDojo
         run: |
           curl -X POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
             -H "Authorization: Token $DEFECTDOJO_TOKEN" \
