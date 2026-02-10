@@ -1,4 +1,4 @@
-name: DevSecOps Pipeline - OWASP Juice Shop (Full Scan)
+name: Security Pipeline (SCA + DAST Authenticated)
 
 on:
   push:
@@ -7,35 +7,27 @@ on:
 
 env:
   JUICE_SHOP_IMAGE: bkimminich/juice-shop
-  TARGET_URL: http://juice-shop:3000
+  JUICE_SHOP_PORT: 3000
+  ZAP_USER_EMAIL: youssefhalleb52@gmail.com
+  ZAP_USER_PASSWORD: halleb123
 
 jobs:
 
 # =====================================================
-# SCA - TRIVY
-# =====================================================
-  trivy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: aquasecurity/trivy-action@0.20.0
-        with:
-          image-ref: ${{ env.JUICE_SHOP_IMAGE }}
-          format: json
-          output: trivy.json
-        continue-on-error: true
-
-# =====================================================
-# DAST - OWASP ZAP (ACTIVE PAYLOAD INJECTION)
+# DAST - OWASP ZAP (AUTHENTICATED ACTIVE SCAN)
 # =====================================================
   zap:
+    name: DAST - OWASP ZAP Authenticated Scan
     runs-on: ubuntu-latest
-    needs: trivy
 
     steps:
-      - name: Create network
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create Docker Network
         run: docker network create zap-net
 
-      - name: Run Juice Shop
+      - name: Run OWASP Juice Shop
         run: |
           docker run -d \
             --name juice-shop \
@@ -44,17 +36,20 @@ jobs:
             ${{ env.JUICE_SHOP_IMAGE }}
 
       - name: Wait for Juice Shop
-        run: |
-          for i in {1..60}; do
-            if curl -s http://localhost:3000 > /dev/null; then
-              exit 0
-            fi
-            sleep 2
-          done
-          exit 1
+        run: sleep 40
 
-      # 🔥 ACTIVE SCAN WITH PAYLOAD INJECTION 🔥
-      - name: OWASP ZAP Active Scan (XSS, SQLi, Headers, Cookies)
+      # 🔑 Create user automatically
+      - name: Create Juice Shop User
+        run: |
+          curl -X POST http://localhost:3000/api/Users \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"email\": \"${{ env.ZAP_USER_EMAIL }}\",
+              \"password\": \"${{ env.ZAP_USER_PASSWORD }}\"
+            }"
+
+      # 🧪 OWASP ZAP authenticated scan
+      - name: Run OWASP ZAP FULL Scan (Authenticated)
         run: |
           docker run --rm \
             --user root \
@@ -62,19 +57,29 @@ jobs:
             -v $(pwd):/zap/wrk \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-full-scan.py \
-            -t ${{ env.TARGET_URL }} \
+            -t http://juice-shop:3000 \
+            -n zap-context.context \
+            -U zap-user \
+            -a \
             -x zap.xml \
-            -r zap.html \
-            -I \
-            -d || true
+            -r zap.html || true
 
-      # ✅ ADD THESE TWO STEPS
-      - name: Check generated ZAP files
-        run: |
-          ls -l zap.html zap.xml
-
-      - name: Upload ZAP HTML Report (Artifact)
+      - name: Upload ZAP HTML Report
         uses: actions/upload-artifact@v4
         with:
           name: zap-html-report
           path: zap.html
+
+      - name: Upload ZAP XML to DefectDojo
+        run: |
+          curl -X POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
+            -H "Authorization: Token $DEFECTDOJO_TOKEN" \
+            -F "scan_type=ZAP Scan" \
+            -F "product_name=$DD_PRODUCT" \
+            -F "engagement_name=$DD_ENGAGEMENT" \
+            -F "file=@zap.xml"
+        env:
+          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+          DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
+          DD_PRODUCT: ${{ secrets.DD_PRODUCT }}
+          DD_ENGAGEMENT: ${{ secrets.DD_ENGAGEMENT }}
