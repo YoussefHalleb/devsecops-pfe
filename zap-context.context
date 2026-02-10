@@ -1,1 +1,30 @@
+<context>
+  <name>JuiceShopContext</name>
+
+  <urls>
+    <includeRegex>http://juice-shop:3000.*</includeRegex>
+  </urls>
+
+  <authentication>
+    <method>formBasedAuthentication</method>
+    <loginUrl>http://juice-shop:3000/rest/user/login</loginUrl>
+    <loginRequestBody>
+      email={%username%}&amp;password={%password%}
+    </loginRequestBody>
+  </authentication>
+
+  <users>
+    <user>
+      <name>zap-user</name>
+      <credentials>
+        <username>youssefhalleb52@gmail.com</username>
+        <password>halleb123</password>
+      </credentials>
+    </user>
+  </users>
+
+  <sessionManagement>
+    <method>cookieBasedSessionManagement</method>
+  </sessionManagement>
+</context>
 
