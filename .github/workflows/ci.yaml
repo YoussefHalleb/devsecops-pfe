@@ -62,8 +62,8 @@ jobs:
             ghcr.io/zaproxy/zaproxy:stable \
             zap-full-scan.py \
             -t ${{ env.TARGET_URL }} \
-            -x zap.xml \
-            -r zap.html \
+            -x /zap/wrk/zap.xml
+            -r /zap/wrk/zap.html
             -I \
             -d || true
 
