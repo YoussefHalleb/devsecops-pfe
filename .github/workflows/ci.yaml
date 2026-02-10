@@ -57,13 +57,14 @@ jobs:
       - name: OWASP ZAP Active Scan (XSS, SQLi, Headers, Cookies)
         run: |
           docker run --rm \
+            --user root \
             --network zap-net \
             -v $(pwd):/zap/wrk \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-full-scan.py \
             -t ${{ env.TARGET_URL }} \
-            -x /zap/wrk/zap.xml
-            -r /zap/wrk/zap.html
+            -x zap.xml \
+            -r zap.html \
             -I \
             -d || true
 
