@@ -53,7 +53,7 @@ jobs:
           done
           exit 1
 
-      # 🔥 THIS IS THE IMPORTANT PART 🔥
+      # 🔥 ACTIVE SCAN WITH PAYLOAD INJECTION 🔥
       - name: OWASP ZAP Active Scan (XSS, SQLi, Headers, Cookies)
         run: |
           docker run --rm \
@@ -66,3 +66,14 @@ jobs:
             -r zap.html \
             -I \
             -d || true
+
+      # ✅ ADD THESE TWO STEPS
+      - name: Check generated ZAP files
+        run: |
+          ls -l zap.html zap.xml
+
+      - name: Upload ZAP HTML Report (Artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-html-report
+          path: zap.html
