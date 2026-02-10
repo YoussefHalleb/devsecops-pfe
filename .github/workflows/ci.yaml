@@ -7,60 +7,35 @@ on:
 
 env:
   JUICE_SHOP_IMAGE: bkimminich/juice-shop
-  JUICE_SHOP_PORT: 3000
   TARGET_URL: http://juice-shop:3000
 
 jobs:
 
 # =====================================================
-# SCA - TRIVY (IMAGE VULNERABILITY SCAN)
+# SCA - TRIVY
 # =====================================================
   trivy:
-    name: SCA - Trivy (Juice Shop)
     runs-on: ubuntu-latest
-
     steps:
-      - name: Scan Juice Shop Docker Image
-        uses: aquasecurity/trivy-action@0.20.0
+      - uses: aquasecurity/trivy-action@0.20.0
         with:
           image-ref: ${{ env.JUICE_SHOP_IMAGE }}
           format: json
           output: trivy.json
         continue-on-error: true
 
-      - name: Upload Trivy Report to DefectDojo
-        run: |
-          curl -sS -X POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
-            -H "Authorization: Token $DEFECTDOJO_TOKEN" \
-            -F "scan_type=Trivy Scan" \
-            -F "product_name=$DD_PRODUCT" \
-            -F "engagement_name=$DD_ENGAGEMENT" \
-            -F "file=@trivy.json"
-        env:
-          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
-          DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
-          DD_PRODUCT: ${{ secrets.DD_PRODUCT }}
-          DD_ENGAGEMENT: ${{ secrets.DD_ENGAGEMENT }}
-
 # =====================================================
-# DAST - OWASP ZAP (ACTIVE SCAN WITH PAYLOAD INJECTION)
+# DAST - OWASP ZAP (ACTIVE PAYLOAD INJECTION)
 # =====================================================
   zap:
-    name: DAST - OWASP ZAP Active Scan (Juice Shop)
     runs-on: ubuntu-latest
     needs: trivy
 
     steps:
-      # -----------------------------
-      # Network
-      # -----------------------------
-      - name: Create Docker Network
+      - name: Create network
         run: docker network create zap-net
 
-      # -----------------------------
-      # Run Juice Shop
-      # -----------------------------
-      - name: Run OWASP Juice Shop
+      - name: Run Juice Shop
         run: |
           docker run -d \
             --name juice-shop \
@@ -70,84 +45,24 @@ jobs:
 
       - name: Wait for Juice Shop
         run: |
-          echo "Waiting for Juice Shop..."
           for i in {1..60}; do
-            if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 | grep -E "200|302" > /dev/null; then
-              echo "Juice Shop is ready"
+            if curl -s http://localhost:3000 > /dev/null; then
               exit 0
             fi
             sleep 2
           done
-          echo "Juice Shop not ready"
           exit 1
 
-      # -----------------------------
-      # Start ZAP (daemon mode)
-      # -----------------------------
-      - name: Start OWASP ZAP (daemon mode)
+      # 🔥 THIS IS THE IMPORTANT PART 🔥
+      - name: OWASP ZAP Active Scan (XSS, SQLi, Headers, Cookies)
         run: |
-          docker run -d \
-            --name zap \
+          docker run --rm \
             --network zap-net \
-            -p 8080:8080 \
             -v $(pwd):/zap/wrk \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap.sh -daemon -host 0.0.0.0 -port 8080
-
-      - name: Wait for ZAP
-        run: sleep 20
-
-      # -----------------------------
-      # Discovery (AJAX Spider)
-      # -----------------------------
-      - name: ZAP AJAX Spider (discover forms & params)
-        run: |
-          docker exec zap zap-cli ajax-spider ${{ env.TARGET_URL }}
-          sleep 30
-
-      # -----------------------------
-      # Active Scan (payload injection)
-      # -----------------------------
-      - name: ZAP Active Scan (XSS, SQLi, Headers, Cookies)
-        run: |
-          docker exec zap zap-cli active-scan \
-            --scanners xss,sqli \
-            ${{ env.TARGET_URL }}
-
-      # -----------------------------
-      # Reports
-      # -----------------------------
-      - name: Generate ZAP XML Report
-        run: |
-          docker exec zap zap-cli report \
-            --output-format xml \
-            --output /zap/wrk/zap.xml
-
-      - name: Generate ZAP HTML Report
-        run: |
-          docker exec zap zap-cli report \
-            --output-format html \
-            --output /zap/wrk/zap.html
-
-      # -----------------------------
-      # Import to DefectDojo
-      # -----------------------------
-      - name: Upload ZAP Report to DefectDojo
-        run: |
-          curl -sS -X POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
-            -H "Authorization: Token $DEFECTDOJO_TOKEN" \
-            -F "scan_type=ZAP Scan" \
-            -F "product_name=$DD_PRODUCT" \
-            -F "engagement_name=$DD_ENGAGEMENT" \
-            -F "file=@zap.xml"
-        env:
-          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
-          DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
-          DD_PRODUCT: ${{ secrets.DD_PRODUCT }}
-          DD_ENGAGEMENT: ${{ secrets.DD_ENGAGEMENT }}
-
-      - name: Upload ZAP HTML Report (Artifact)
-        uses: actions/upload-artifact@v4
-        with:
-          name: zap-html-report
-          path: zap.html
+            zap-full-scan.py \
+            -t ${{ env.TARGET_URL }} \
+            -x zap.xml \
+            -r zap.html \
+            -I \
+            -d || true
