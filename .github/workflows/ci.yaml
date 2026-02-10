@@ -8,6 +8,7 @@ on:
 env:
   JUICE_SHOP_IMAGE: bkimminich/juice-shop
   JUICE_SHOP_PORT: 3000
+  TARGET_URL: http://juice-shop:3000
 
 jobs:
 
@@ -29,7 +30,7 @@ jobs:
 
       - name: Upload Trivy Report to DefectDojo
         run: |
-          curl -X POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
+          curl -sS -X POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
             -H "Authorization: Token $DEFECTDOJO_TOKEN" \
             -F "scan_type=Trivy Scan" \
             -F "product_name=$DD_PRODUCT" \
@@ -42,17 +43,23 @@ jobs:
           DD_ENGAGEMENT: ${{ secrets.DD_ENGAGEMENT }}
 
 # =====================================================
-# DAST - OWASP ZAP (FULL SCAN - ACTIVE)
+# DAST - OWASP ZAP (ACTIVE SCAN WITH PAYLOAD INJECTION)
 # =====================================================
   zap:
-    name: DAST - OWASP ZAP FULL SCAN (Juice Shop)
+    name: DAST - OWASP ZAP Active Scan (Juice Shop)
     runs-on: ubuntu-latest
     needs: trivy
 
     steps:
+      # -----------------------------
+      # Network
+      # -----------------------------
       - name: Create Docker Network
         run: docker network create zap-net
 
+      # -----------------------------
+      # Run Juice Shop
+      # -----------------------------
       - name: Run OWASP Juice Shop
         run: |
           docker run -d \
@@ -62,27 +69,72 @@ jobs:
             ${{ env.JUICE_SHOP_IMAGE }}
 
       - name: Wait for Juice Shop
-        run: sleep 40
-
-      - name: Run OWASP ZAP FULL Scan
         run: |
-          docker run --rm \
-            --user root \
+          echo "Waiting for Juice Shop..."
+          for i in {1..60}; do
+            if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 | grep -E "200|302" > /dev/null; then
+              echo "Juice Shop is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Juice Shop not ready"
+          exit 1
+
+      # -----------------------------
+      # Start ZAP (daemon mode)
+      # -----------------------------
+      - name: Start OWASP ZAP (daemon mode)
+        run: |
+          docker run -d \
+            --name zap \
             --network zap-net \
+            -p 8080:8080 \
             -v $(pwd):/zap/wrk \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap-full-scan.py \
-            -t http://juice-shop:3000 \
-            -x zap.xml \
-            -r zap.html || true
+            zap.sh -daemon -host 0.0.0.0 -port 8080
 
-      - name: Check ZAP reports
+      - name: Wait for ZAP
+        run: sleep 20
+
+      # -----------------------------
+      # Discovery (AJAX Spider)
+      # -----------------------------
+      - name: ZAP AJAX Spider (discover forms & params)
         run: |
-          ls -l zap.xml zap.html
+          docker exec zap zap-cli ajax-spider ${{ env.TARGET_URL }}
+          sleep 30
 
+      # -----------------------------
+      # Active Scan (payload injection)
+      # -----------------------------
+      - name: ZAP Active Scan (XSS, SQLi, Headers, Cookies)
+        run: |
+          docker exec zap zap-cli active-scan \
+            --scanners xss,sqli \
+            ${{ env.TARGET_URL }}
+
+      # -----------------------------
+      # Reports
+      # -----------------------------
+      - name: Generate ZAP XML Report
+        run: |
+          docker exec zap zap-cli report \
+            --output-format xml \
+            --output /zap/wrk/zap.xml
+
+      - name: Generate ZAP HTML Report
+        run: |
+          docker exec zap zap-cli report \
+            --output-format html \
+            --output /zap/wrk/zap.html
+
+      # -----------------------------
+      # Import to DefectDojo
+      # -----------------------------
       - name: Upload ZAP Report to DefectDojo
         run: |
-          curl -X POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
+          curl -sS -X POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
             -H "Authorization: Token $DEFECTDOJO_TOKEN" \
             -F "scan_type=ZAP Scan" \
             -F "product_name=$DD_PRODUCT" \
