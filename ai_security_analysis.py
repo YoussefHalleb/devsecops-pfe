@@ -1,12 +1,9 @@
 import json
 import xml.etree.ElementTree as ET
 import os
-from google import genai
+import requests
 
-# =====================
-# Configure Gemini (OFFICIAL + STABLE)
-# =====================
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+API_KEY = os.getenv("GEMINI_API_KEY")
 
 summary = ""
 
@@ -40,9 +37,6 @@ Package: {vuln.get('PkgName')}
 Description: {vuln.get('Description')}
 """
 
-# =====================
-# PROMPT GEMINI
-# =====================
 prompt = f"""
 You are a senior DevSecOps and application security expert.
 
@@ -59,12 +53,24 @@ Vulnerabilities:
 {summary}
 """
 
-response = client.models.generate_content(
-    model="gemini-1.0-pro",
-    contents=prompt
-)
+url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}"
+
+payload = {
+    "contents": [
+        {
+            "parts": [
+                {"text": prompt}
+            ]
+        }
+    ]
+}
+
+response = requests.post(url, json=payload)
+response.raise_for_status()
+
+text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
 
 with open("ai_security_recommendations.md", "w") as f:
-    f.write(response.text)
+    f.write(text)
 
-print("✅ Gemini security recommendations generated successfully.")
+print("✅ Gemini security recommendations generated successfully (REST API).")
