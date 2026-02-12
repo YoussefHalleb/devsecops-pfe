@@ -1,61 +1,61 @@
-name: DevSecOps Pipeline (Trivy + AI - Free)
+import json
+import os
+import requests
 
-on:
-  push:
-    branches: ["master"]
-  pull_request:
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-env:
-  JUICE_SHOP_IMAGE: bkimminich/juice-shop
+headers = {
+    "Authorization": f"Bearer {GROQ_API_KEY}",
+    "Content-Type": "application/json"
+}
 
-jobs:
+summary = ""
 
-# =====================================================
-# SAST / SCA - TRIVY
-# =====================================================
-  trivy-ai:
-    name: Trivy + AI Security Analysis
-    runs-on: ubuntu-latest
+# =====================
+# TRIVY REPORT
+# =====================
+if os.path.exists("trivy.json"):
+    with open("trivy.json") as f:
+        data = json.load(f)
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    for result in data.get("Results", []):
+        for vuln in result.get("Vulnerabilities", []):
+            summary += f"""
+Vulnerability ID: {vuln.get('VulnerabilityID')}
+Severity: {vuln.get('Severity')}
+Package: {vuln.get('PkgName')}
+Description: {vuln.get('Description')}
+"""
 
-      # -----------------------------
-      # TRIVY SCAN
-      # -----------------------------
-      - name: Scan Docker Image with Trivy
-        uses: aquasecurity/trivy-action@0.20.0
-        with:
-          image-ref: ${{ env.JUICE_SHOP_IMAGE }}
-          format: json
-          output: trivy.json
-        continue-on-error: true
+prompt = f"""
+You are a senior application security expert.
 
-      - name: Upload Trivy Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-report
-          path: trivy.json
+Analyze the following Trivy vulnerabilities.
+For each vulnerability:
+- Explain how it can be exploited
+- Describe the impact
+- Provide clear remediation steps
+- Mention OWASP best practices
 
-      # -----------------------------
-      # AI ANALYSIS (HUGGING FACE)
-      # -----------------------------
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+Vulnerabilities:
+{summary}
+"""
 
-      - name: Install Python dependencies
-        run: pip install requests
+payload = {
+    "model": "llama3-70b-8192",
+    "messages": [
+        {"role": "user", "content": prompt}
+    ],
+    "temperature": 0.2
+}
 
-      - name: AI Security Analysis (Hugging Face)
-        run: python ai_security_analysis.py
-        env:
-          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+response = requests.post(API_URL, headers=headers, json=payload)
+response.raise_for_status()
 
-      - name: Upload AI Security Recommendations
-        uses: actions/upload-artifact@v4
-        with:
-          name: ai-security-recommendations
-          path: ai_security_recommendations.md
+result = response.json()
+
+with open("ai_security_recommendations.md", "w") as f:
+    f.write(result["choices"][0]["message"]["content"])
+
+print("✅ AI security recommendations generated using Groq (LLaMA 3).")
