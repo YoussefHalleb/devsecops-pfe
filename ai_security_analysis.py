@@ -4,7 +4,7 @@ import os
 from google import genai
 
 # =====================
-# Configure Gemini (NEW API)
+# Configure Gemini (OFFICIAL + STABLE)
 # =====================
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
@@ -60,7 +60,7 @@ Vulnerabilities:
 """
 
 response = client.models.generate_content(
-    model="gemini-1.5-pro",
+    model="gemini-1.0-pro",
     contents=prompt
 )
 
