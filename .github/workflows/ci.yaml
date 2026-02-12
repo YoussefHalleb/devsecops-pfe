@@ -1,4 +1,4 @@
-name: Security Pipeline (SAST + DAST + AI)
+name: DevSecOps Pipeline (SAST + DAST + AI)
 
 on:
   push:
@@ -12,7 +12,7 @@ env:
 jobs:
 
 # =====================================================
-# SCA - TRIVY (IMAGE VULNERABILITY SCAN)
+# SCA / SAST - TRIVY
 # =====================================================
   trivy:
     name: SCA - Trivy (Juice Shop)
@@ -45,22 +45,22 @@ jobs:
           DD_ENGAGEMENT: ${{ secrets.DD_ENGAGEMENT }}
 
       # ===============================
-      # AI ANALYSIS (SAST)
+      # GEMINI AI ANALYSIS (SAST)
       # ===============================
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Install Python dependencies
-        run: pip install openai
+      - name: Install Gemini dependencies
+        run: pip install google-generativeai
 
-      - name: AI Analysis - Trivy
+      - name: Gemini AI Analysis (Trivy)
         run: python ai_security_analysis.py
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
-      - name: Upload AI Report (SAST)
+      - name: Upload AI SAST Recommendations
         uses: actions/upload-artifact@v4
         with:
           name: ai-sast-recommendations
@@ -68,7 +68,7 @@ jobs:
 
 
 # =====================================================
-# DAST - OWASP ZAP (FULL SCAN - ACTIVE)
+# DAST - OWASP ZAP
 # =====================================================
   zap:
     name: DAST - OWASP ZAP FULL SCAN (Juice Shop)
@@ -120,15 +120,15 @@ jobs:
           DD_ENGAGEMENT: ${{ secrets.DD_ENGAGEMENT }}
 
       # ===============================
-      # AI ANALYSIS (DAST)
+      # GEMINI AI ANALYSIS (DAST)
       # ===============================
-      - name: Install Python dependencies
-        run: pip install openai
+      - name: Install Gemini dependencies
+        run: pip install google-generativeai
 
-      - name: AI Analysis - ZAP
+      - name: Gemini AI Analysis (ZAP)
         run: python ai_security_analysis.py
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Upload ZAP HTML Report
         uses: actions/upload-artifact@v4
@@ -136,7 +136,7 @@ jobs:
           name: zap-html-report
           path: zap.html
 
-      - name: Upload AI Report (DAST)
+      - name: Upload AI DAST Recommendations
         uses: actions/upload-artifact@v4
         with:
           name: ai-dast-recommendations
