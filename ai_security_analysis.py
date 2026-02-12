@@ -11,6 +11,8 @@ headers = {
 }
 
 summary = ""
+MAX_VULNS = 10
+count = 0
 
 # =====================
 # TRIVY REPORT
@@ -21,12 +23,16 @@ if os.path.exists("trivy.json"):
 
     for result in data.get("Results", []):
         for vuln in result.get("Vulnerabilities", []):
+            if count >= MAX_VULNS:
+                break
+
             summary += f"""
 Vulnerability ID: {vuln.get('VulnerabilityID')}
 Severity: {vuln.get('Severity')}
 Package: {vuln.get('PkgName')}
 Description: {vuln.get('Description')}
 """
+            count += 1
 
 prompt = f"""
 You are a senior application security expert.
@@ -35,15 +41,15 @@ Analyze the following Trivy vulnerabilities.
 For each vulnerability:
 - Explain how it can be exploited
 - Describe the impact
-- Provide clear remediation steps
-- Mention OWASP best practices
+- Provide concrete remediation steps
+- Reference OWASP best practices
 
 Vulnerabilities:
 {summary}
 """
 
 payload = {
-    "model": "llama3-70b-8192",
+    "model": "llama3-8b-8192",
     "messages": [
         {"role": "user", "content": prompt}
     ],
@@ -51,6 +57,12 @@ payload = {
 }
 
 response = requests.post(API_URL, headers=headers, json=payload)
+
+# DEBUG utile si problème
+if response.status_code != 200:
+    print("Groq RAW RESPONSE:")
+    print(response.text)
+
 response.raise_for_status()
 
 result = response.json()
@@ -58,4 +70,4 @@ result = response.json()
 with open("ai_security_recommendations.md", "w") as f:
     f.write(result["choices"][0]["message"]["content"])
 
-print("✅ AI security recommendations generated using Groq (LLaMA 3).")
+print("✅ AI security recommendations generated successfully using Groq.")
