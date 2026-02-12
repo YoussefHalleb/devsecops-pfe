@@ -11,7 +11,7 @@ headers = {
 }
 
 summary = ""
-MAX_VULNS = 10
+MAX_VULNS = 8
 count = 0
 
 # =====================
@@ -49,7 +49,7 @@ Vulnerabilities:
 """
 
 payload = {
-    "model": "llama3-8b-8192",
+    "model": "llama-3.1-8b-instant",
     "messages": [
         {"role": "user", "content": prompt}
     ],
@@ -58,7 +58,7 @@ payload = {
 
 response = requests.post(API_URL, headers=headers, json=payload)
 
-# DEBUG utile si problème
+# Debug utile
 if response.status_code != 200:
     print("Groq RAW RESPONSE:")
     print(response.text)
@@ -70,4 +70,4 @@ result = response.json()
 with open("ai_security_recommendations.md", "w") as f:
     f.write(result["choices"][0]["message"]["content"])
 
-print("✅ AI security recommendations generated successfully using Groq.")
+print("✅ AI security recommendations generated successfully using Groq (LLaMA 3.1).")
