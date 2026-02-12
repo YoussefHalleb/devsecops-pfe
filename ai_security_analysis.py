@@ -1,6 +1,7 @@
 import json
 import os
 import requests
+import xml.etree.ElementTree as ET
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -11,11 +12,11 @@ headers = {
 }
 
 summary = ""
-MAX_VULNS = 8
+MAX_ITEMS = 6
 count = 0
 
 # =====================
-# TRIVY REPORT
+# TRIVY (SAST / SCA)
 # =====================
 if os.path.exists("trivy.json"):
     with open("trivy.json") as f:
@@ -23,10 +24,11 @@ if os.path.exists("trivy.json"):
 
     for result in data.get("Results", []):
         for vuln in result.get("Vulnerabilities", []):
-            if count >= MAX_VULNS:
+            if count >= MAX_ITEMS:
                 break
 
             summary += f"""
+[SAST - Trivy]
 Vulnerability ID: {vuln.get('VulnerabilityID')}
 Severity: {vuln.get('Severity')}
 Package: {vuln.get('PkgName')}
@@ -34,15 +36,36 @@ Description: {vuln.get('Description')}
 """
             count += 1
 
-prompt = f"""
-You are a senior application security expert.
+# =====================
+# ZAP (DAST)
+# =====================
+if os.path.exists("zap.xml"):
+    tree = ET.parse("zap.xml")
+    root = tree.getroot()
 
-Analyze the following Trivy vulnerabilities.
-For each vulnerability:
+    for alert in root.findall(".//alertitem"):
+        if count >= MAX_ITEMS * 2:
+            break
+
+        summary += f"""
+[DAST - OWASP ZAP]
+Vulnerability: {alert.findtext('alert')}
+Risk: {alert.findtext('riskdesc')}
+URL: {alert.findtext('uri')}
+Description: {alert.findtext('desc')}
+"""
+        count += 1
+
+prompt = f"""
+You are a senior DevSecOps and application security expert.
+
+Analyze the following SAST and DAST vulnerabilities detected in a CI/CD pipeline.
+
+For EACH vulnerability:
 - Explain how it can be exploited
-- Describe the impact
+- Describe the technical and business impact
 - Provide concrete remediation steps
-- Reference OWASP best practices
+- Reference OWASP Top 10 or security best practices
 
 Vulnerabilities:
 {summary}
@@ -57,12 +80,6 @@ payload = {
 }
 
 response = requests.post(API_URL, headers=headers, json=payload)
-
-# Debug utile
-if response.status_code != 200:
-    print("Groq RAW RESPONSE:")
-    print(response.text)
-
 response.raise_for_status()
 
 result = response.json()
@@ -70,4 +87,4 @@ result = response.json()
 with open("ai_security_recommendations.md", "w") as f:
     f.write(result["choices"][0]["message"]["content"])
 
-print("✅ AI security recommendations generated successfully using Groq (LLaMA 3.1).")
+print("✅ AI security recommendations generated (Trivy + ZAP + Groq).")
