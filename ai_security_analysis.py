@@ -1,19 +1,17 @@
 import json
 import xml.etree.ElementTree as ET
 import os
-import google.generativeai as genai
+from google import genai
 
 # =====================
-# Configure Gemini
+# Configure Gemini (NEW API)
 # =====================
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-
-model = genai.GenerativeModel("gemini-1.5-flash")
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 summary = ""
 
 # =====================
-# DAST - ZAP
+# DAST - OWASP ZAP
 # =====================
 if os.path.exists("zap.xml"):
     tree = ET.parse("zap.xml")
@@ -61,7 +59,10 @@ Vulnerabilities:
 {summary}
 """
 
-response = model.generate_content(prompt)
+response = client.models.generate_content(
+    model="gemini-1.5-pro",
+    contents=prompt
+)
 
 with open("ai_security_recommendations.md", "w") as f:
     f.write(response.text)
