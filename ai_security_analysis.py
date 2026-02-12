@@ -53,7 +53,11 @@ Vulnerabilities:
 {summary}
 """
 
-url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}"
+url = (
+    "https://generativelanguage.googleapis.com/"
+    "v1beta/models/gemini-pro:generateContent"
+    f"?key={API_KEY}"
+)
 
 payload = {
     "contents": [
@@ -73,4 +77,4 @@ text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
 with open("ai_security_recommendations.md", "w") as f:
     f.write(text)
 
-print("✅ Gemini security recommendations generated successfully (REST API).")
+print("✅ Gemini security recommendations generated successfully.")
