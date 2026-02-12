@@ -1,45 +1,63 @@
-import json
-import xml.etree.ElementTree as ET
 import os
+import json
 import requests
 
-token = os.getenv("HF_API_TOKEN")
-model = "tiiuae/falcon-7b-instruct"
-
-summary = ""
-
-# ZAP XML extract
-if os.path.exists("zap.xml"):
-    tree = ET.parse("zap.xml")
-    root = tree.getroot()
-    for alert in root.findall(".//alertitem"):
-        summary += f"Vulnerability: {alert.findtext('alert')} - {alert.findtext('desc')}\n"
-
-# Trivy JSON extract
-if os.path.exists("trivy.json"):
-    with open("trivy.json") as f:
-        data = json.load(f)
-    for result in data.get("Results", []):
-        for vuln in result.get("Vulnerabilities", []):
-            summary += f"Vulnerability: {vuln['VulnerabilityID']} - {vuln['Description']}\n"
-
-prompt = f"""You are a cybersecurity expert. Analyze these vulnerabilities and propose remediation steps.\n\n{summary}"""
+HF_TOKEN = os.getenv("HF_API_TOKEN")
+MODEL = "tiiuae/falcon-7b-instruct"
+API_URL = f"https://api-inference.huggingface.co/models/{MODEL}"
 
 headers = {
-    "Authorization": f"Bearer {token}",
+    "Authorization": f"Bearer {HF_TOKEN}",
     "Content-Type": "application/json"
 }
 
-api_url = f"https://api-inference.huggingface.co/models/{model}"
+summary = ""
+
+# =====================
+# TRIVY REPORT
+# =====================
+if os.path.exists("trivy.json"):
+    with open("trivy.json") as f:
+        data = json.load(f)
+
+    for result in data.get("Results", []):
+        for vuln in result.get("Vulnerabilities", []):
+            summary += f"""
+Vulnerability ID: {vuln.get('VulnerabilityID')}
+Severity: {vuln.get('Severity')}
+Package: {vuln.get('PkgName')}
+Description: {vuln.get('Description')}
+"""
+
+prompt = f"""
+You are a cybersecurity expert.
+
+Analyze the following vulnerabilities detected by Trivy.
+For each vulnerability:
+- Explain how it can be exploited
+- Describe the security impact
+- Provide concrete remediation steps
+- Reference OWASP or security best practices
+
+Vulnerabilities:
+{summary}
+"""
 
 payload = {
     "inputs": prompt,
-    "options": {"use_cache": False, "wait_for_model": True},
-    "parameters": { "max_new_tokens": 500 }
+    "parameters": {
+        "max_new_tokens": 600,
+        "temperature": 0.2
+    }
 }
 
-response = requests.post(api_url, headers=headers, json=payload)
-data = response.json()
+response = requests.post(API_URL, headers=headers, json=payload)
+result = response.json()
 
 with open("ai_security_recommendations.md", "w") as f:
-    f.write(data[0]["generated_text"])
+    if isinstance(result, list) and "generated_text" in result[0]:
+        f.write(result[0]["generated_text"])
+    else:
+        f.write("AI analysis could not be generated. Please review the Trivy report manually.")
+
+print("✅ AI security analysis completed (Trivy + Hugging Face).")
