@@ -1,69 +1,69 @@
 import json
-import os
-import openai
 import xml.etree.ElementTree as ET
+import os
+import google.generativeai as genai
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# =====================
+# Configure Gemini
+# =====================
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 summary = ""
 
-# ======== DAST (ZAP XML) ========
-try:
+# =====================
+# DAST - ZAP
+# =====================
+if os.path.exists("zap.xml"):
     tree = ET.parse("zap.xml")
     root = tree.getroot()
 
-    for site in root.findall(".//site"):
-        for alert in site.findall(".//alertitem"):
-            name = alert.findtext("alert")
-            risk = alert.findtext("riskdesc")
-            desc = alert.findtext("desc")
-
-            summary += f"""
-Vulnerability: {name}
-Risk: {risk}
-Description: {desc}
+    for alert in root.findall(".//alertitem"):
+        summary += f"""
+Vulnerability: {alert.findtext('alert')}
+Risk: {alert.findtext('riskdesc')}
+Description: {alert.findtext('desc')}
 """
-except Exception:
-    summary += "\nNo ZAP report found.\n"
 
-# ======== SAST (TRIVY JSON) ========
-try:
+# =====================
+# SAST - TRIVY
+# =====================
+if os.path.exists("trivy.json"):
     with open("trivy.json") as f:
         data = json.load(f)
 
     for result in data.get("Results", []):
         for vuln in result.get("Vulnerabilities", []):
             summary += f"""
-Vulnerability: {vuln['VulnerabilityID']}
-Severity: {vuln['Severity']}
-Package: {vuln['PkgName']}
-Description: {vuln['Description']}
+Vulnerability: {vuln.get('VulnerabilityID')}
+Severity: {vuln.get('Severity')}
+Package: {vuln.get('PkgName')}
+Description: {vuln.get('Description')}
 """
-except Exception:
-    summary += "\nNo Trivy report found.\n"
 
-# ======== PROMPT IA ========
+# =====================
+# PROMPT GEMINI
+# =====================
 prompt = f"""
-You are a senior DevSecOps security expert.
+You are a senior DevSecOps and application security expert.
 
-Analyze the following SAST and DAST vulnerabilities.
+Analyze the following SAST and DAST vulnerabilities detected in a CI/CD pipeline.
+
 For each vulnerability:
 - Explain how it can be exploited
-- Explain the business and technical impact
+- Describe the technical and business impact
 - Provide concrete remediation steps
-- Give secure configuration or code examples if possible
+- Give secure configuration or code examples
+- Reference OWASP best practices when relevant
 
 Vulnerabilities:
 {summary}
 """
 
-response = openai.ChatCompletion.create(
-    model="gpt-4o-mini",
-    messages=[{"role": "user", "content": prompt}],
-    temperature=0.2
-)
+response = model.generate_content(prompt)
 
 with open("ai_security_recommendations.md", "w") as f:
-    f.write(response.choices[0].message.content)
+    f.write(response.text)
 
-print("AI security recommendations generated.")
+print("✅ Gemini security recommendations generated successfully.")
