@@ -1,4 +1,4 @@
-name: DevSecOps Pipeline (Trivy + AI Groq)
+name: DevSecOps Pipeline (Trivy + ZAP + AI Groq)
 
 on:
   push:
@@ -9,13 +9,16 @@ env:
   JUICE_SHOP_IMAGE: bkimminich/juice-shop
 
 jobs:
-  trivy-ai:
+  security:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # =====================
+      # TRIVY (SAST / SCA)
+      # =====================
       - name: Scan Docker Image with Trivy
         uses: aquasecurity/trivy-action@0.20.0
         with:
@@ -24,12 +27,40 @@ jobs:
           output: trivy.json
         continue-on-error: true
 
-      - name: Upload Trivy Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-report
-          path: trivy.json
+      # =====================
+      # RUN JUICE SHOP
+      # =====================
+      - name: Create Docker Network
+        run: docker network create zap-net
 
+      - name: Run OWASP Juice Shop
+        run: |
+          docker run -d \
+            --name juice-shop \
+            --network zap-net \
+            -p 3000:3000 \
+            ${{ env.JUICE_SHOP_IMAGE }}
+
+      - name: Wait for Juice Shop
+        run: sleep 40
+
+      # =====================
+      # ZAP (DAST)
+      # =====================
+      - name: Run OWASP ZAP Full Scan
+        run: |
+          docker run --rm \
+            --network zap-net \
+            -v $(pwd):/zap/wrk \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-full-scan.py \
+            -t http://juice-shop:3000 \
+            -x zap.xml \
+            -r zap.html || true
+
+      # =====================
+      # AI ANALYSIS (GROQ)
+      # =====================
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -38,13 +69,20 @@ jobs:
       - name: Install Python dependencies
         run: pip install requests
 
-      - name: AI Security Analysis with Groq
+      - name: AI Security Analysis (Groq)
         run: python ai_security_analysis.py
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 
-      - name: Upload AI Security Recommendations
+      # =====================
+      # ARTIFACTS
+      # =====================
+      - name: Upload Security Reports
         uses: actions/upload-artifact@v4
         with:
-          name: ai-security-recommendations
-          path: ai_security_recommendations.md
+          name: security-reports
+          path: |
+            trivy.json
+            zap.xml
+            zap.html
+            ai_security_recommendations.md
