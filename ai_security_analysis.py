@@ -53,6 +53,9 @@ payload = {
 
 response = requests.post(API_URL, headers=headers, json=payload)
 result = response.json()
+print("HF RAW RESPONSE:")
+print(result)
+
 
 with open("ai_security_recommendations.md", "w") as f:
     if isinstance(result, list) and "generated_text" in result[0]:
