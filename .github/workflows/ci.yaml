@@ -53,7 +53,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install Gemini dependencies
-        run: pip install google-generativeai
+        run: pip install google-genai
 
       - name: Gemini AI Analysis (Trivy)
         run: python ai_security_analysis.py
