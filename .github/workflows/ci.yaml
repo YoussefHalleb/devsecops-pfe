@@ -1,4 +1,4 @@
-name: DevSecOps Pipeline (SAST + DAST + AI)
+name: DevSecOps Pipeline (SAST + DAST + AI - Free)
 
 on:
   push:
@@ -15,14 +15,14 @@ jobs:
 # SAST / SCA - TRIVY
 # =====================================================
   trivy:
-    name: SAST - Trivy (Juice Shop)
+    name: SAST - Trivy
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Scan Juice Shop Docker Image
+      - name: Scan Docker Image with Trivy
         uses: aquasecurity/trivy-action@0.20.0
         with:
           image-ref: ${{ env.JUICE_SHOP_IMAGE }}
@@ -30,48 +30,18 @@ jobs:
           output: trivy.json
         continue-on-error: true
 
-      - name: Upload Trivy Report to DefectDojo
-        run: |
-          curl -X POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
-            -H "Authorization: Token $DEFECTDOJO_TOKEN" \
-            -F "scan_type=Trivy Scan" \
-            -F "product_name=$DD_PRODUCT" \
-            -F "engagement_name=$DD_ENGAGEMENT" \
-            -F "file=@trivy.json"
-        env:
-          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
-          DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
-          DD_PRODUCT: ${{ secrets.DD_PRODUCT }}
-          DD_ENGAGEMENT: ${{ secrets.DD_ENGAGEMENT }}
-
-      # ===============================
-      # OPENAI ANALYSIS (SAST)
-      # ===============================
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install OpenAI dependency
-        run: pip install openai
-
-      - name: AI Analysis with OpenAI (Trivy)
-        run: python ai_security_analysis.py
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-
-      - name: Upload AI SAST Recommendations
+      - name: Upload Trivy Report (Artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: ai-sast-recommendations
-          path: ai_security_recommendations.md
+          name: trivy-report
+          path: trivy.json
 
 
 # =====================================================
 # DAST - OWASP ZAP
 # =====================================================
   zap:
-    name: DAST - OWASP ZAP FULL SCAN (Juice Shop)
+    name: DAST - OWASP ZAP
     runs-on: ubuntu-latest
     needs: trivy
 
@@ -93,10 +63,9 @@ jobs:
       - name: Wait for Juice Shop
         run: sleep 40
 
-      - name: Run OWASP ZAP FULL Scan
+      - name: Run OWASP ZAP Full Scan
         run: |
           docker run --rm \
-            --user root \
             --network zap-net \
             -v $(pwd):/zap/wrk \
             ghcr.io/zaproxy/zaproxy:stable \
@@ -105,10 +74,52 @@ jobs:
             -x zap.xml \
             -r zap.html || true
 
-      - name: Upload ZAP Report to DefectDojo
-        run: |
-          curl -X POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
-            -H "Authorization: Token $DEFECTDOJO_TOKEN" \
-            -F "scan_type=ZAP Scan" \
-            -F "product_name=$DD_PRODUCT" \
-            -F "engagement
+      - name: Upload ZAP Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-reports
+          path: |
+            zap.xml
+            zap.html
+
+
+# =====================================================
+# AI SECURITY ANALYSIS (HUGGING FACE - FREE)
+# =====================================================
+  ai-analysis:
+    name: AI Security Analysis (Free)
+    runs-on: ubuntu-latest
+    needs: zap
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Trivy Report
+        uses: actions/download-artifact@v4
+        with:
+          name: trivy-report
+
+      - name: Download ZAP Report
+        uses: actions/download-artifact@v4
+        with:
+          name: zap-reports
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: pip install requests
+
+      - name: AI Analysis with Hugging Face
+        run: python ai_security_analysis.py
+        env:
+          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+
+      - name: Upload AI Security Recommendations
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-security-recommendations
+          path: ai_security_recommendations.md
