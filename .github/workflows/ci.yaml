@@ -6,16 +6,16 @@ on:
   pull_request:
 
 env:
-  JUICE_SHOP_IMAGE: bkimminich/juice-shop 
+  JUICE_SHOP_IMAGE: bkimminich/juice-shop
   JUICE_SHOP_PORT: 3000
 
 jobs:
 
 # =====================================================
-# SCA / SAST - TRIVY
+# SAST / SCA - TRIVY
 # =====================================================
   trivy:
-    name: SCA - Trivy (Juice Shop)
+    name: SAST - Trivy (Juice Shop)
     runs-on: ubuntu-latest
 
     steps:
@@ -45,20 +45,20 @@ jobs:
           DD_ENGAGEMENT: ${{ secrets.DD_ENGAGEMENT }}
 
       # ===============================
-      # GEMINI AI ANALYSIS (SAST)
+      # OPENAI ANALYSIS (SAST)
       # ===============================
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install Gemini dependencies
-        run: pip install requests
+      - name: Install OpenAI dependency
+        run: pip install openai
 
-      - name: Gemini AI Analysis (Trivy)
+      - name: AI Analysis with OpenAI (Trivy)
         run: python ai_security_analysis.py
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Upload AI SAST Recommendations
         uses: actions/upload-artifact@v4
@@ -111,33 +111,4 @@ jobs:
             -H "Authorization: Token $DEFECTDOJO_TOKEN" \
             -F "scan_type=ZAP Scan" \
             -F "product_name=$DD_PRODUCT" \
-            -F "engagement_name=$DD_ENGAGEMENT" \
-            -F "file=@zap.xml"
-        env:
-          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
-          DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
-          DD_PRODUCT: ${{ secrets.DD_PRODUCT }}
-          DD_ENGAGEMENT: ${{ secrets.DD_ENGAGEMENT }}
-
-      # ===============================
-      # GEMINI AI ANALYSIS (DAST)
-      # ===============================
-      - name: Install Gemini dependencies
-        run: pip install google-generativeai
-
-      - name: Gemini AI Analysis (ZAP)
-        run: python ai_security_analysis.py
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-
-      - name: Upload ZAP HTML Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: zap-html-report
-          path: zap.html
-
-      - name: Upload AI DAST Recommendations
-        uses: actions/upload-artifact@v4
-        with:
-          name: ai-dast-recommendations
-          path: ai_security_recommendations.md
+            -F "engagement
