@@ -1,9 +1,9 @@
 import json
 import xml.etree.ElementTree as ET
 import os
-import requests
+from openai import OpenAI
 
-API_KEY = os.getenv("GEMINI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 summary = ""
 
@@ -53,28 +53,13 @@ Vulnerabilities:
 {summary}
 """
 
-url = (
-    "https://generativelanguage.googleapis.com/"
-    "v1beta/models/gemini-pro:generateContent"
-    f"?key={API_KEY}"
+response = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": prompt}],
+    temperature=0.2
 )
 
-payload = {
-    "contents": [
-        {
-            "parts": [
-                {"text": prompt}
-            ]
-        }
-    ]
-}
-
-response = requests.post(url, json=payload)
-response.raise_for_status()
-
-text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
-
 with open("ai_security_recommendations.md", "w") as f:
-    f.write(text)
+    f.write(response.choices[0].message.content)
 
-print("✅ Gemini security recommendations generated successfully.")
+print("✅ OpenAI security recommendations generated successfully.")
