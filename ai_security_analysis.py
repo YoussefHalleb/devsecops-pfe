@@ -4,7 +4,7 @@ import requests
 
 HF_TOKEN = os.getenv("HF_API_TOKEN")
 MODEL = "tiiuae/falcon-7b-instruct"
-API_URL = f"https://api-inference.huggingface.co/models/{MODEL}"
+API_URL = f"https://router.huggingface.co/hf-inference/models/{MODEL}"
 
 headers = {
     "Authorization": f"Bearer {HF_TOKEN}",
