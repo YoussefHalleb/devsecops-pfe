@@ -1,65 +1,45 @@
 import json
 import xml.etree.ElementTree as ET
 import os
-from openai import OpenAI
+import requests
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+token = os.getenv("HF_API_TOKEN")
+model = "tiiuae/falcon-7b-instruct"
 
 summary = ""
 
-# =====================
-# DAST - OWASP ZAP
-# =====================
+# ZAP XML extract
 if os.path.exists("zap.xml"):
     tree = ET.parse("zap.xml")
     root = tree.getroot()
-
     for alert in root.findall(".//alertitem"):
-        summary += f"""
-Vulnerability: {alert.findtext('alert')}
-Risk: {alert.findtext('riskdesc')}
-Description: {alert.findtext('desc')}
-"""
+        summary += f"Vulnerability: {alert.findtext('alert')} - {alert.findtext('desc')}\n"
 
-# =====================
-# SAST - TRIVY
-# =====================
+# Trivy JSON extract
 if os.path.exists("trivy.json"):
     with open("trivy.json") as f:
         data = json.load(f)
-
     for result in data.get("Results", []):
         for vuln in result.get("Vulnerabilities", []):
-            summary += f"""
-Vulnerability: {vuln.get('VulnerabilityID')}
-Severity: {vuln.get('Severity')}
-Package: {vuln.get('PkgName')}
-Description: {vuln.get('Description')}
-"""
+            summary += f"Vulnerability: {vuln['VulnerabilityID']} - {vuln['Description']}\n"
 
-prompt = f"""
-You are a senior DevSecOps and application security expert.
+prompt = f"""You are a cybersecurity expert. Analyze these vulnerabilities and propose remediation steps.\n\n{summary}"""
 
-Analyze the following SAST and DAST vulnerabilities detected in a CI/CD pipeline.
+headers = {
+    "Authorization": f"Bearer {token}",
+    "Content-Type": "application/json"
+}
 
-For each vulnerability:
-- Explain how it can be exploited
-- Describe the technical and business impact
-- Provide concrete remediation steps
-- Give secure configuration or code examples
-- Reference OWASP best practices when relevant
+api_url = f"https://api-inference.huggingface.co/models/{model}"
 
-Vulnerabilities:
-{summary}
-"""
+payload = {
+    "inputs": prompt,
+    "options": {"use_cache": False, "wait_for_model": True},
+    "parameters": { "max_new_tokens": 500 }
+}
 
-response = client.chat.completions.create(
-    model="gpt-4o-mini",
-    messages=[{"role": "user", "content": prompt}],
-    temperature=0.2
-)
+response = requests.post(api_url, headers=headers, json=payload)
+data = response.json()
 
 with open("ai_security_recommendations.md", "w") as f:
-    f.write(response.choices[0].message.content)
-
-print("✅ OpenAI security recommendations generated successfully.")
+    f.write(data[0]["generated_text"])
