@@ -1,13 +1,12 @@
-import os
 import json
+import os
 import requests
 
-HF_TOKEN = os.getenv("HF_API_TOKEN")
-MODEL = "tiiuae/falcon-7b-instruct"
-API_URL = f"https://router.huggingface.co/hf-inference/models/{MODEL}"
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 headers = {
-    "Authorization": f"Bearer {HF_TOKEN}",
+    "Authorization": f"Bearer {GROQ_API_KEY}",
     "Content-Type": "application/json"
 }
 
@@ -30,37 +29,33 @@ Description: {vuln.get('Description')}
 """
 
 prompt = f"""
-You are a cybersecurity expert.
+You are a senior application security expert.
 
-Analyze the following vulnerabilities detected by Trivy.
+Analyze the following Trivy vulnerabilities.
 For each vulnerability:
 - Explain how it can be exploited
-- Describe the security impact
-- Provide concrete remediation steps
-- Reference OWASP or security best practices
+- Describe the impact
+- Provide clear remediation steps
+- Mention OWASP best practices
 
 Vulnerabilities:
 {summary}
 """
 
 payload = {
-    "inputs": prompt,
-    "parameters": {
-        "max_new_tokens": 600,
-        "temperature": 0.2
-    }
+    "model": "llama3-70b-8192",
+    "messages": [
+        {"role": "user", "content": prompt}
+    ],
+    "temperature": 0.2
 }
 
 response = requests.post(API_URL, headers=headers, json=payload)
-result = response.json()
-print("HF RAW RESPONSE:")
-print(result)
+response.raise_for_status()
 
+result = response.json()
 
 with open("ai_security_recommendations.md", "w") as f:
-    if isinstance(result, list) and "generated_text" in result[0]:
-        f.write(result[0]["generated_text"])
-    else:
-        f.write("AI analysis could not be generated. Please review the Trivy report manually.")
+    f.write(result["choices"][0]["message"]["content"])
 
-print("✅ AI security analysis completed (Trivy + Hugging Face).")
+print("✅ AI security recommendations generated using Groq (LLaMA 3).")
