@@ -1,4 +1,4 @@
-name: Security Pipeline - OWASP ZAP Authenticated
+name: Security Pipeline (SAST + DAST + AI)
 
 on:
   push:
@@ -9,21 +9,77 @@ env:
   JUICE_SHOP_IMAGE: bkimminich/juice-shop
   JUICE_SHOP_PORT: 3000
 
-  # ⚠️ Pour un vrai projet, mets-les dans GitHub Secrets
-  ZAP_USER_EMAIL: youssefhalleb52@gmail.com
-  ZAP_USER_PASSWORD: halleb123
-
 jobs:
 
-  zap:
-    name: DAST - OWASP ZAP Authenticated Scan
+# =====================================================
+# SCA - TRIVY (IMAGE VULNERABILITY SCAN)
+# =====================================================
+  trivy:
+    name: SCA - Trivy (Juice Shop)
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Create Docker network
+      - name: Scan Juice Shop Docker Image
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          image-ref: ${{ env.JUICE_SHOP_IMAGE }}
+          format: json
+          output: trivy.json
+        continue-on-error: true
+
+      - name: Upload Trivy Report to DefectDojo
+        run: |
+          curl -X POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
+            -H "Authorization: Token $DEFECTDOJO_TOKEN" \
+            -F "scan_type=Trivy Scan" \
+            -F "product_name=$DD_PRODUCT" \
+            -F "engagement_name=$DD_ENGAGEMENT" \
+            -F "file=@trivy.json"
+        env:
+          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+          DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
+          DD_PRODUCT: ${{ secrets.DD_PRODUCT }}
+          DD_ENGAGEMENT: ${{ secrets.DD_ENGAGEMENT }}
+
+      # ===============================
+      # AI ANALYSIS (SAST)
+      # ===============================
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install openai
+
+      - name: AI Analysis - Trivy
+        run: python ai_security_analysis.py
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Upload AI Report (SAST)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-sast-recommendations
+          path: ai_security_recommendations.md
+
+
+# =====================================================
+# DAST - OWASP ZAP (FULL SCAN - ACTIVE)
+# =====================================================
+  zap:
+    name: DAST - OWASP ZAP FULL SCAN (Juice Shop)
+    runs-on: ubuntu-latest
+    needs: trivy
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create Docker Network
         run: docker network create zap-net
 
       - name: Run OWASP Juice Shop
@@ -34,25 +90,10 @@ jobs:
             -p 3000:3000 \
             ${{ env.JUICE_SHOP_IMAGE }}
 
-      - name: Wait for Juice Shop to start
+      - name: Wait for Juice Shop
         run: sleep 40
 
-      # =====================================================
-      # Create user automatically (NO manual login)
-      # =====================================================
-      - name: Create Juice Shop User
-        run: |
-          curl -s -X POST http://localhost:3000/api/Users \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"email\": \"${{ env.ZAP_USER_EMAIL }}\",
-              \"password\": \"${{ env.ZAP_USER_PASSWORD }}\"
-            }" || true
-
-      # =====================================================
-      # OWASP ZAP AUTHENTICATED ACTIVE SCAN
-      # =====================================================
-      - name: Run OWASP ZAP Full Scan (Authenticated)
+      - name: Run OWASP ZAP FULL Scan
         run: |
           docker run --rm \
             --user root \
@@ -61,26 +102,10 @@ jobs:
             ghcr.io/zaproxy/zaproxy:stable \
             zap-full-scan.py \
             -t http://juice-shop:3000 \
-            -a \
             -x zap.xml \
-            -r zap.html \
-            -z "
-              -config auth.method=form
-              -config auth.loginurl=http://juice-shop:3000/rest/user/login
-              -config auth.loginbody=email=${{ env.ZAP_USER_EMAIL }}&password=${{ env.ZAP_USER_PASSWORD }}
-              -config auth.loggedinindicator=Logout
-            " || true
+            -r zap.html || true
 
-      # =====================================================
-      # Upload reports
-      # =====================================================
-      - name: Upload ZAP HTML Report 
-        uses: actions/upload-artifact@v4
-        with:
-          name: zap-html-report
-          path: zap.html
-
-      - name: Upload ZAP XML Report to DefectDojo
+      - name: Upload ZAP Report to DefectDojo
         run: |
           curl -X POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
             -H "Authorization: Token $DEFECTDOJO_TOKEN" \
@@ -93,3 +118,26 @@ jobs:
           DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
           DD_PRODUCT: ${{ secrets.DD_PRODUCT }}
           DD_ENGAGEMENT: ${{ secrets.DD_ENGAGEMENT }}
+
+      # ===============================
+      # AI ANALYSIS (DAST)
+      # ===============================
+      - name: Install Python dependencies
+        run: pip install openai
+
+      - name: AI Analysis - ZAP
+        run: python ai_security_analysis.py
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Upload ZAP HTML Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-html-report
+          path: zap.html
+
+      - name: Upload AI Report (DAST)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-dast-recommendations
+          path: ai_security_recommendations.md
