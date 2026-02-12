@@ -6,7 +6,7 @@ on:
   pull_request:
 
 env:
-  JUICE_SHOP_IMAGE: bkimminich/juice-shop
+  JUICE_SHOP_IMAGE: bkimminich/juice-shop 
   JUICE_SHOP_PORT: 3000
 
 jobs:
