@@ -265,6 +265,22 @@ restoreOverwrittenFilesWithOriginals().then(() => {
     }
     next()
   }
+app.use('/ftp', (req, res, next) => {
+  const decodedPath = decodeURIComponent(req.originalUrl)
+
+  // Block path traversal / normalization
+  if (decodedPath.includes('/./') || decodedPath.includes('/../')) {
+    return res.sendStatus(403)
+  }
+
+  // Block backup & sensitive files
+  if (req.path.match(/\.(bak|md|json|yml|pyc)$/i)) {
+    return res.sendStatus(403)
+  }
+
+  next()
+})
+
 
   // vuln-code-snippet start directoryListingChallenge accessLogDisclosureChallenge
   /* /ftp directory browsing and file download */ // vuln-code-snippet neutral-line directoryListingChallenge
