@@ -31,6 +31,8 @@ import securityTxt from 'express-security.txt'
 import { rateLimit } from 'express-rate-limit'
 import { getStream } from 'file-stream-rotator'
 import type { Request, Response, NextFunction } from 'express'
+// @ts-ignore
+import authorize from './lib/security/authorize'
 
 import { sequelize } from './models'
 import { UserModel } from './models/user'
@@ -596,8 +598,12 @@ restoreOverwrittenFilesWithOriginals().then(() => {
   app.get('/rest/basket/:id', retrieveBasket())
   app.post('/rest/basket/:id/checkout', placeOrder())
   app.put('/rest/basket/:id/coupon/:coupon', applyCoupon())
-  app.get('/rest/admin/application-version', retrieveAppVersion())
-  app.get('/rest/admin/application-configuration', retrieveAppConfiguration())
+  app.get(
+  '/rest/admin/application-version',
+  authorize(),
+  retrieveAppVersion()
+)
+  app.get('/rest/admin/application-configuration',authorize(), retrieveAppConfiguration())
   app.get('/rest/repeat-notification', repeatNotification())
   app.get('/rest/continue-code', continueCode())
   app.get('/rest/continue-code-findIt', continueCodeFindIt())
