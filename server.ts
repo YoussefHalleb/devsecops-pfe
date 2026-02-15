@@ -209,16 +209,21 @@ app.use(
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:"],
       connectSrc: ["'self'"],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
-      frameAncestors: ["'none'"]
+      frameAncestors: ["'none'"],
+
+      // directives manquantes (IMPORTANT)
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+      formAction: ["'self'"]
     }
   })
 )
+
 
 // app.use(helmet.xssFilter()); // deprecated
 app.disable('x-powered-by')
