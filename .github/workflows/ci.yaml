@@ -1,4 +1,4 @@
-name: DevSecOps Pipeline (Sonar + Trivy + ZAP → DefectDojo)
+name: DevSecOps Pipeline (Trivy + SonarQube + ZAP + AI Groq)
 
 on:
   push:
@@ -7,102 +7,107 @@ on:
 
 jobs:
   security:
-    runs-on: [self-hosted, windows, x64] 
- 
+    runs-on: ubuntu-latest   # self-hosted OK aussi
 
     steps:
-    # =====================
-    # CHECKOUT
-    # =====================
-    - name: Checkout code
-      uses: actions/checkout@v4
+      # =====================
+      # CHECKOUT CODE
+      # =====================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # IMPORTANT pour SonarQube
 
-    # =====================
-    # BUILD IMAGE
-    # =====================
-    - name: Build Juice Shop image
-      run: docker build -t my-juice-shop .
+      # =====================
+      # SONARQUBE (SAST)
+      # =====================
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v2
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=juice-shop
+            -Dsonar.projectName=OWASP-Juice-Shop
+            -Dsonar.sources=.
+            -Dsonar.exclusions=**/node_modules/**,**/frontend/**,**/dist/**
 
-    # =====================
-    # SONARQUBE (SAST)
-    # =====================
-    - name: SonarQube Scan
-      run: |
-        docker run --rm \
-          -e SONAR_HOST_URL=${{ secrets.SONAR_HOST_URL }} \
-          -e SONAR_LOGIN=${{ secrets.SONAR_TOKEN }} \
-          -v $(pwd):/usr/src \
-          sonarsource/sonar-scanner-cli \
-          -Dsonar.projectKey=juice-shop \
-          -Dsonar.sources=.
+      # =====================
+      # BUILD CUSTOM IMAGE
+      # =====================
+      - name: Build Juice Shop from source
+        run: |
+          docker build -t my-juice-shop .
 
-    # =====================
-    # TRIVY (SCA)
-    # =====================
-    - name: Trivy Image Scan
-      run: |
-        trivy image my-juice-shop \
-          --format json \
-          --output trivy.json || true
+      # =====================
+      # TRIVY (SCA / IMAGE)
+      # =====================
+      - name: Scan custom Docker image with Trivy
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          image-ref: my-juice-shop
+          format: json
+          output: trivy.json
+        continue-on-error: true
 
-    # =====================
-    # RUN APP
-    # =====================
-    - name: Run Juice Shop
-      run: |
-        docker network create zap-net || true
-        docker run -d --rm \
-          --name juice-shop \
-          --network zap-net \
-          -p 3000:3000 \
-          my-juice-shop
+      # =====================
+      # RUN JUICE SHOP
+      # =====================
+      - name: Create Docker Network
+        run: docker network create zap-net
 
-    - name: Wait app
-      run: sleep 40
+      - name: Run custom Juice Shop
+        run: |
+          docker run -d \
+            --name juice-shop \
+            --network zap-net \
+            -p 3000:3000 \
+            my-juice-shop
 
-    # =====================
-    # ZAP (DAST)
-    # =====================
-    - name: OWASP ZAP Scan
-      run: |
-        docker run --rm \
-          --network zap-net \
-          -v $(pwd):/zap/wrk \
-          ghcr.io/zaproxy/zaproxy:stable \
-          zap-full-scan.py \
-          -t http://juice-shop:3000 \
-          -x zap.xml || true
+      - name: Wait for Juice Shop
+        run: sleep 40
 
-    # =====================
-    # DEFECTDOJO IMPORTS
-    # =====================
-    - name: Upload Trivy to DefectDojo
-      run: |
-        curl -X POST "${{ secrets.DEFECTDOJO_URL }}/api/v2/import-scan/" \
-          -H "Authorization: Token ${{ secrets.DEFECTDOJO_TOKEN }}" \
-          -F "scan_type=Trivy Scan" \
-          -F "file=@trivy.json" \
-          -F "engagement=${{ secrets.DD_ENGAGEMENT }}" \
-          -F "product=${{ secrets.DD_PRODUCT }}" \
-          -F "active=true" \
-          -F "verified=false"
+      # =====================
+      # ZAP (DAST)
+      # =====================
+      - name: Run OWASP ZAP Full Scan
+        run: |
+          docker run --rm \
+            --user root \
+            --network zap-net \
+            -v $(pwd):/zap/wrk \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-full-scan.py \
+            -t http://juice-shop:3000 \
+            -x zap.xml \
+            -r zap.html || true
 
-    - name: Upload ZAP to DefectDojo
-      run: |
-        curl -X POST "${{ secrets.DEFECTDOJO_URL }}/api/v2/import-scan/" \
-          -H "Authorization: Token ${{ secrets.DEFECTDOJO_TOKEN }}" \
-          -F "scan_type=ZAP Scan" \
-          -F "file=@zap.xml" \
-          -F "engagement=${{ secrets.DD_ENGAGEMENT }}" \
-          -F "product=${{ secrets.DD_PRODUCT }}" \
-          -F "active=true" \
-          -F "verified=false"
+      # =====================
+      # AI ANALYSIS (GROQ)
+      # =====================
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-    - name: Upload SonarQube to DefectDojo
-      run: |
-        curl -X POST "${{ secrets.DEFECTDOJO_URL }}/api/v2/import-scan/" \
-          -H "Authorization: Token ${{ secrets.DEFECTDOJO_TOKEN }}" \
-          -F "scan_type=SonarQube Scan" \
-          -F "sonar_project_key=juice-shop" \
-          -F "engagement=${{ secrets.DD_ENGAGEMENT }}" \
-          -F "product=${{ secrets.DD_PRODUCT }}"
+      - name: Install Python dependencies
+        run: pip install requests
+
+      - name: AI Security Analysis (Groq)
+        run: python ai_security_analysis.py
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+
+      # =====================
+      # ARTIFACTS
+      # =====================
+      - name: Upload Security Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            trivy.json
+            zap.xml
+            zap.html
+            ai_security_recommendations.md
