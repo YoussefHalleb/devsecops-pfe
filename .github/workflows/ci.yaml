@@ -7,7 +7,7 @@ on:
 
 jobs:
   security:
-    runs-on: [self-hosted, windows, x64]
+    runs-on: [self-hosted, windows, x64] 
  
 
     steps:
